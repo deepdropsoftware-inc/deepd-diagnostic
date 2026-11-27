@@ -170,8 +170,9 @@ export function extractImports(text: string): ImportRef[] {
     const braces = /\{([^}]*)\}/.exec(clause);
     const named = (braces?.[1] ?? "")
       .split(",")
-      .map((part) => part.trim().split(/\s+as\s+/)[0]?.trim() ?? "")
-      .filter((name) => name.length > 0 && name !== "type");
+      // `import { type Foo }` declares a type, not a symbol called "type Foo".
+      .map((part) => part.trim().replace(/^type\s+/, "").split(/\s+as\s+/)[0]?.trim() ?? "")
+      .filter((name) => name.length > 0);
 
     refs.push({
       spec,
@@ -218,10 +219,27 @@ export function parseExports(text: string): ExportInfo {
   };
 }
 
+/** NodeNext emits `./foo.js` from `foo.ts`; resolve the source, not the build output. */
+const TS_REWRITES: Record<string, string[]> = {
+  ".js": [".ts", ".tsx"],
+  ".jsx": [".tsx"],
+  ".mjs": [".mts"],
+  ".cjs": [".cts"],
+};
+
 async function resolveModule(baseDir: string, spec: string): Promise<string | null> {
   const candidate = path.resolve(baseDir, spec);
 
   if (await isFile(candidate)) return candidate;
+
+  const declared = path.extname(spec);
+  const rewrites = TS_REWRITES[declared];
+  if (rewrites && declared) {
+    const stem = candidate.slice(0, candidate.length - declared.length);
+    for (const rewrite of rewrites) {
+      if (await isFile(`${stem}${rewrite}`)) return `${stem}${rewrite}`;
+    }
+  }
 
   for (const extension of MODULE_EXTENSIONS) {
     if (await isFile(`${candidate}${extension}`)) return `${candidate}${extension}`;

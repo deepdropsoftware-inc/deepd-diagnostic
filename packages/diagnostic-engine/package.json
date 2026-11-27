@@ -47,6 +47,9 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "node --import tsx --test test/*.test.ts",
     "clean": "rm -rf dist",
+    "check:armor": "npm run typecheck",
+    "check:editions": "npm test",
+    "check:export": "npm run build",
     "prepublishOnly": "npm run build",
     "diagnose": "tsx src/cli.ts"
   },

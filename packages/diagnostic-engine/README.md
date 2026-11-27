@@ -443,6 +443,14 @@ Tests run against `src/` via `tsx`, so they do not need a build. The functional
 contracts (two passes, ledger, signals) are exercised by running the CLI against a
 fixture repo; the unit tests cover the parsing and classification edges.
 
+This repository gates itself: `armor.scripts` map to `check:armor` (typecheck),
+`check:editions` (tests) and `check:export` (build), and `armor.packageDirs` points at
+the engine package. From the repo root, after a build:
+
+```bash
+node packages/diagnostic-engine/dist/cli.js   # exit 0 on a clean tree
+```
+
 ## Notes and limits
 
 - **Apple** needs macOS with Xcode, plus `brew install xcbeautify`. Override the

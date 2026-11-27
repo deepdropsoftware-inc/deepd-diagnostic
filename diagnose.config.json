@@ -1,0 +1,9 @@
+{
+  "armor": {
+    "packageDirs": ["packages/diagnostic-engine"]
+  },
+  "impact": {
+    "base": "HEAD",
+    "adapter": "auto"
+  }
+}

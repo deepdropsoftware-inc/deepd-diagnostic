@@ -44,7 +44,13 @@ cd packages/diagnostic-engine
 npm run typecheck
 npm test
 npm run build
+
+# the engine gates this repository: Armor maps to the three checks above
+cd ../.. && node packages/diagnostic-engine/dist/cli.js
 ```
+
+CI runs typecheck, tests and build on Node 20, 22 and 24, then the engine against
+this repo on 24.
 
 ## License
 
