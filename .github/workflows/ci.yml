@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, transfer/deepd-diagnostic]
   pull_request:
 
 permissions:
@@ -31,4 +31,23 @@ jobs:
       - run: npm run build
       - name: Self-diagnose
         if: matrix.node == 24
+        run: node dist/cli.js --quiet
+
+  windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: packages/diagnostic-engine
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: packages/diagnostic-engine/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+      - name: Self-diagnose
         run: node dist/cli.js --quiet
