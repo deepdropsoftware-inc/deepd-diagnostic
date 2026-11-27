@@ -1,0 +1,99 @@
+# DeepDiagnose CI template.
+# Copy this file to .github/workflows/diagnose.yml in any project, then delete the
+# toolchain steps your project does not need.
+#
+# The job fails when DeepDiagnose exits non-zero, which happens when Angel Armor
+# (the mandatory foundation) or any language plugin reports a failure. The report
+# and the artifacts/ tree are uploaded even when the run fails.
+
+name: Diagnose
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: diagnose-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      # ---------------------------------------------------------------------
+      # Toolchains. Uncomment the ones this project uses — a missing toolchain
+      # is reported as "skipped", never as a failure.
+      # ---------------------------------------------------------------------
+      # - uses: actions/setup-go@v5
+      #   with:
+      #     go-version: stable
+      # - uses: actions-rust-lang/setup-rust-toolchain@v1
+      #   with:
+      #     components: clippy, rustfmt
+      # - uses: actions/setup-python@v5
+      #   with:
+      #     python-version: "3.12"
+      # - uses: actions/setup-dotnet@v4
+      #   with:
+      #     dotnet-version: "8.0.x"
+      # - uses: ruby/setup-ruby@v1
+      #   with:
+      #     bundler-cache: true
+      # - uses: shivammathur/setup-php@v2
+      #   with:
+      #     tools: phpunit, phpstan, composer
+      # - uses: actions/setup-java@v4
+      #   with:
+      #     distribution: temurin
+      #     java-version: "21"
+
+      - name: Install JavaScript dependencies
+        run: |
+          if [ -f package-lock.json ]; then
+            npm ci
+          elif [ -f pnpm-lock.yaml ]; then
+            corepack enable && pnpm install --frozen-lockfile
+          elif [ -f yarn.lock ]; then
+            corepack enable && yarn install --immutable
+          else
+            npm install --no-audit --no-fund
+          fi
+
+      # Flaky detection needs per-test history across runs. Restoring it keeps the
+      # trend alive between workflow runs; delete this step for a single-shot check.
+      - name: Restore flaky history
+        uses: actions/cache@v4
+        with:
+          path: .deepdiagnose/flaky-history.json
+          key: deepdiagnose-${{ github.ref_name }}-${{ github.run_id }}
+          restore-keys: |
+            deepdiagnose-${{ github.ref_name }}-
+            deepdiagnose-
+
+      - name: Diagnose
+        run: npx --yes @deepdrop/diagnose
+
+      - name: Upload diagnostic report and artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: diagnostics
+          path: |
+            diagnostic-report.json
+            UNRESOLVED.md
+            blockers.json
+            artifacts/
+            .deepdiagnose/
+          if-no-files-found: warn
+          retention-days: 14

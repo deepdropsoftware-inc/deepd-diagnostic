@@ -1,0 +1,19 @@
+# dependencies
+node_modules/
+
+# build output
+dist/
+*.tsbuildinfo
+
+# engine output (regenerated on every run)
+artifacts/
+diagnostic-report.json
+.deepdiagnose/
+
+# packaging
+*.tgz
+
+# editors / OS
+.DS_Store
+.idea/
+.vscode/

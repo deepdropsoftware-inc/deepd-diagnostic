@@ -1,0 +1,61 @@
+{
+  "name": "@deepdrop/diagnose",
+  "version": "0.2.0",
+  "description": "Universal diagnostic engine: auto-detects ecosystems, runs Angel Armor first, routes to the right tools, and writes one unified report.",
+  "license": "MIT",
+  "keywords": [
+    "diagnostics",
+    "diagnose",
+    "monorepo",
+    "angel-armor",
+    "junit",
+    "flaky-tests",
+    "test-impact",
+    "ci",
+    "lint",
+    "testing",
+    "static-analysis"
+  ],
+  "type": "module",
+  "bin": {
+    "deepdiagnose": "./dist/cli.js",
+    "diagnose": "./dist/cli.js"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./config": "./dist/core/config.js",
+    "./cli": "./dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    ".github/workflows/diagnose-template.yml"
+  ],
+  "engines": {
+    "node": ">=18.18"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "node --import tsx --test test/*.test.ts",
+    "clean": "rm -rf dist",
+    "prepublishOnly": "npm run build",
+    "diagnose": "tsx src/cli.ts"
+  },
+  "dependencies": {
+    "commander": "^12.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.1",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  }
+}
