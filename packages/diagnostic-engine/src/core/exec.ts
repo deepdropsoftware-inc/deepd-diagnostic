@@ -6,7 +6,7 @@ import type { CommandResult } from "./types.js";
 const MAX_OUTPUT = 20_000;
 const DEFAULT_TIMEOUT_MS = 240_000;
 
-interface CommandInvocation {
+export interface CommandInvocation {
   command: string;
   args: string[];
 }
@@ -16,7 +16,7 @@ interface CommandInvocation {
  * Launch the npm CLI JavaScript entrypoint with the current Node executable
  * instead. This keeps argument boundaries intact and avoids a shell.
  */
-function commandFor(
+export function commandFor(
   platform: NodeJS.Platform,
   command: string,
   args: string[],
