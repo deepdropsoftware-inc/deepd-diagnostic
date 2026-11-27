@@ -30,7 +30,7 @@ export function commandFor(
   const candidates = [
     npmExecPath && (command === "npm"
       ? npmExecPath
-      : npmExecPath.replace(/npm-cli\.js$/i, "npx-cli.js")),
+      : path.join(path.dirname(npmExecPath), cliName)),
     path.join(path.dirname(process.execPath), "node_modules", "npm", "bin", cliName),
   ].filter((candidate): candidate is string => Boolean(candidate));
 
