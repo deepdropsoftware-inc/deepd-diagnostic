@@ -55,6 +55,8 @@ export interface CommandResult {
   stdout: string;
   stderr: string;
   timedOut: boolean;
+  /** Set when the execution environment itself could not launch the command. */
+  environmentError?: string;
 }
 
 /**

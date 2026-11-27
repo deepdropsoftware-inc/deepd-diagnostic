@@ -141,7 +141,10 @@ async function ensureDependencies(ctx: RunContext): Promise<void> {
   );
 
   if (install.code !== 0) {
-    ctx.log(`fix: npm install failed (exit ${install.code ?? "unknown"}) — continuing with checks`);
+    const detail = install.environmentError
+      ? `environment unavailable: ${install.environmentError}`
+      : `exit ${install.code ?? "unknown"}`;
+    ctx.log(`fix: npm install failed (${detail}) — continuing with checks`);
   }
 }
 

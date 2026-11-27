@@ -59,6 +59,10 @@ The `deepdiagnose` / `diagnose` binaries exist in `package.json`, so a local `np
 
 The declared `engines.node >=18.18` therefore covers the runtime, but not the test script. Do not claim Node 18 test support without running it.
 
+### Windows npm/npx launching
+
+Windows cannot spawn `npm.cmd` / `npx.cmd` with `shell: false`. The engine launches `npm-cli.js` / `npx-cli.js` with the current Node executable instead. `npm_execpath` is accepted only when its basename is one of those CLI files; both npm and npx are then resolved from that installation directory, so an npm request cannot launch npx by mistake. The fallback checks npm beside `node.exe`, each `PATH` entry's `node_modules/npm/bin`, and `%APPDATA%\npm\node_modules\npm\bin`. If no CLI is found, affected checks are reported as skipped environment blockers with the locations checked and an explanation — not as ordinary failed checks with an unknown exit code. Arguments remain an argv array; no shell is introduced.
+
 Each ecosystem's toolchain (Go, Cargo, .NET, Ruby, PHP, JDK/Gradle, Xcode) comes from the project under test. A missing toolchain is reported as a skipped check and recorded as a blocker, never as a failure.
 
 ## 4. CLI commands

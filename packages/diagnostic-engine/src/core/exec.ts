@@ -11,10 +11,26 @@ export interface CommandInvocation {
   args: string[];
 }
 
+function uniquePaths(values: string[]): string[] {
+  const seen = new Set<string>();
+  const result: string[] = [];
+
+  for (const value of values) {
+    const key = process.platform === "win32" ? value.toLowerCase() : value;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    result.push(value);
+  }
+
+  return result;
+}
+
 /**
  * Resolve npm's JavaScript entrypoints without launching Windows .cmd shims.
  * npm_execpath may identify either npm-cli.js or npx-cli.js; use its directory
- * for both commands, but never trust an unrelated executable path.
+ * for both commands, but never trust an unrelated executable path. When npm is
+ * invoked directly from a terminal, npm_execpath is unset, so npm is also
+ * searched beside node.exe, on PATH, and in %APPDATA%\npm.
  */
 export function commandFor(
   platform: NodeJS.Platform,
@@ -30,28 +46,30 @@ export function commandFor(
   const cliName = command === "npm" ? "npm-cli.js" : "npx-cli.js";
   const npmExecPath = env.npm_execpath;
   const npmExecBasename = npmExecPath ? path.basename(npmExecPath).toLowerCase() : "";
-  const trustedNpmCli = npmExecPath &&
-    (npmExecBasename === "npm-cli.js" || npmExecBasename === "npx-cli.js")
-    ? path.join(path.dirname(npmExecPath), cliName)
-    : undefined;
+  const directories: string[] = [];
 
-  // Also supports direct Node/global CLI invocation when npm_execpath is absent,
-  // provided npm is installed beside the Node executable (the standard Node setup).
-  const nodeInstallCli = path.join(
-    path.dirname(nodePath),
-    "node_modules",
-    "npm",
-    "bin",
-    cliName,
-  );
-  const candidates = [trustedNpmCli, nodeInstallCli].filter(
-    (candidate): candidate is string => typeof candidate === "string",
-  );
+  if (npmExecPath && (npmExecBasename === "npm-cli.js" || npmExecBasename === "npx-cli.js")) {
+    directories.push(path.dirname(npmExecPath));
+  }
 
+  // Node installers ship npm beside node.exe (node_modules/npm/bin).
+  directories.push(path.join(path.dirname(nodePath), "node_modules", "npm", "bin"));
+
+  // Global npm prefixes and Node directories on PATH, for direct CLI usage.
+  const pathValue = env.PATH ?? env.Path ?? "";
+  for (const rawEntry of pathValue.split(platform === "win32" ? ";" : path.delimiter)) {
+    const entry = rawEntry.trim().replace(/^"|"$/g, "");
+    if (!entry) continue;
+    directories.push(path.join(entry, "node_modules", "npm", "bin"));
+  }
+
+  if (env.APPDATA) {
+    directories.push(path.join(env.APPDATA, "npm", "node_modules", "npm", "bin"));
+  }
+
+  const candidates = uniquePaths(directories).map((directory) => path.join(directory, cliName));
   const cliPath = candidates.find((candidate) => existsSync(candidate));
-  return cliPath
-    ? { command: nodePath, args: [cliPath, ...args] }
-    : null;
+  return cliPath ? { command: nodePath, args: [cliPath, ...args] } : null;
 }
 
 /**
@@ -68,12 +86,15 @@ export async function exec(
   const invocation = commandFor(process.platform, command, args);
 
   if (!invocation) {
+    const message = `Unable to locate the Windows ${command} CLI entrypoint. Checked npm beside Node.js (${path.dirname(process.execPath)}), PATH entries, and %APPDATA%\\npm. Set npm_execpath to npm-cli.js or npx-cli.js, or install npm alongside Node.js.`;
+
     return {
       command: printable,
       code: null,
       stdout: "",
-      stderr: `Unable to locate the Windows ${command} CLI entrypoint. Set npm_execpath to npm-cli.js or npx-cli.js, or install npm alongside Node.js at ${path.dirname(process.execPath)}.`,
+      stderr: message,
       timedOut: false,
+      environmentError: message,
     };
   }
 
@@ -82,6 +103,7 @@ export async function exec(
     let stderr = "";
     let timedOut = false;
     let settled = false;
+    let environmentError: string | undefined;
 
     const child = spawn(invocation.command, invocation.args, {
       cwd,
@@ -104,6 +126,7 @@ export async function exec(
         stdout: stdout.slice(-MAX_OUTPUT),
         stderr: stderr.slice(-MAX_OUTPUT),
         timedOut,
+        environmentError,
       });
     };
 
@@ -114,7 +137,10 @@ export async function exec(
       stderr += chunk.toString();
     });
     child.on("error", (error: NodeJS.ErrnoException) => {
-      stderr += `\\n${error.code === "ENOENT" ? `${invocation.command} not found` : error.message}`;
+      if (error.code === "ENOENT" && (command === "npm" || command === "npx")) {
+        environmentError = `${invocation.command} not found`;
+      }
+      stderr += `\n${error.code === "ENOENT" ? `${invocation.command} not found` : error.message}`;
       finish(null);
     });
     child.on("close", (code) => finish(code));
