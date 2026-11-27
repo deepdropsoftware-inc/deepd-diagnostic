@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
@@ -39,6 +39,24 @@ test("inline `type` modifiers are not mistaken for symbol names", async () => {
   );
 
   const findings = await scanModuleGraph(dir, [path.join(dir, "a.ts"), path.join(dir, "b.ts")]);
+  assert.deepEqual(findings, []);
+});
+
+test("aliases in an inherited tsconfig do not manufacture findings", async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), "dd-pass2-alias-"));
+  await writeFile(path.join(dir, "tsconfig.base.json"), '{"compilerOptions":{"paths":{"@/*":["src/*"]}}}\n');
+  await writeFile(
+    path.join(dir, "tsconfig.json"),
+    '{"extends":"./tsconfig.base.json","include":["src/**/*.ts"]}\n',
+  );
+  await mkdir(path.join(dir, "src"), { recursive: true });
+  await writeFile(path.join(dir, "src", "b.ts"), "export const value = 1;\n");
+  await writeFile(
+    path.join(dir, "src", "a.ts"),
+    'import { value } from "@/b";\nimport { value as again } from "./b.js";\nexport const sum = value + again;\n',
+  );
+
+  const findings = await scanModuleGraph(dir, [path.join(dir, "src", "a.ts"), path.join(dir, "src", "b.ts")]);
   assert.deepEqual(findings, []);
 });
 

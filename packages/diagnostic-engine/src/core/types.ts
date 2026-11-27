@@ -279,6 +279,10 @@ export interface ImpactReport {
   selectedTests: string[];
   candidates: number;
   reductionPct: number;
+  /** Relative/alias imports the graph could not resolve: selection may be partial. */
+  unresolvedSpecifiers?: number;
+  /** Alias specifiers that matched more than one file: left unresolved on purpose. */
+  ambiguousSpecifiers?: number;
   fallbackReason?: string;
   durationMs: number;
   note?: string;

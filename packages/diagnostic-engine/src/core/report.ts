@@ -219,6 +219,13 @@ function renderImpact(impact: ImpactReport): string[] {
   );
   if (impact.fallbackReason) lines.push(yellow(`  ${impact.fallbackReason}`));
   if (impact.note) lines.push(yellow(`  ${impact.note}`));
+  if ((impact.unresolvedSpecifiers ?? 0) > 0 || (impact.ambiguousSpecifiers ?? 0) > 0) {
+    lines.push(
+      yellow(
+        `  graph: ${impact.unresolvedSpecifiers ?? 0} unresolved · ${impact.ambiguousSpecifiers ?? 0} ambiguous specifier(s) — selection may be partial`,
+      ),
+    );
+  }
 
   for (const test of impact.selectedTests.slice(0, 10)) {
     lines.push(`  ${green("○")} ${dim(test)}`);

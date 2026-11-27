@@ -76,6 +76,51 @@ test("nested aliases resolve, and a changed test selects itself", async () => {
   );
 });
 
+test("NodeNext .js specifiers are followed through the graph", async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), "dd-impact-nodenext-"));
+  await mkdir(path.join(dir, "src"), { recursive: true });
+  await mkdir(path.join(dir, "tests"), { recursive: true });
+
+  await writeFile(path.join(dir, "src", "b.ts"), "export const b = 1;\n");
+  await writeFile(
+    path.join(dir, "src", "a.ts"),
+    'import { b } from "./b.js";\nexport const a = b;\n',
+  );
+  await writeFile(
+    path.join(dir, "tests", "a.test.ts"),
+    'import { a } from "../src/a.js";\nexport const t = a;\n',
+  );
+
+  const selected = await selectFromGraph({
+    target: dir,
+    changed: [path.join(dir, "src", "b.ts")],
+    files: ["src/a.ts", "src/b.ts", "tests/a.test.ts"].map((file) => path.join(dir, file)),
+  });
+  assert.deepEqual(selected, ["tests/a.test.ts"]);
+});
+
+test("an alias that does not resolve is counted, so a partial selection is visible", async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), "dd-impact-unresolved-"));
+  await mkdir(path.join(dir, "tests"), { recursive: true });
+  await writeFile(
+    path.join(dir, "tests", "gone.test.ts"),
+    'import { x } from "@/gone";\nexport const t = x;\n',
+  );
+  await writeFile(
+    path.join(dir, "tsconfig.json"),
+    '{"compilerOptions":{"baseUrl":".","paths":{"@/*":["src/*"]}}}\n',
+  );
+
+  const stats = { unresolved: 0, ambiguous: 0, bare: 0 };
+  await selectFromGraph({
+    target: dir,
+    changed: [path.join(dir, "src", "gone.ts")],
+    files: [path.join(dir, "tests", "gone.test.ts")],
+    stats,
+  });
+  assert.equal(stats.unresolved, 1);
+});
+
 test("a project without aliases still resolves relative imports only", async () => {
   const dir = await mkdtemp(path.join(tmpdir(), "dd-impact-bare-"));
   await mkdir(path.join(dir, "tests"), { recursive: true });

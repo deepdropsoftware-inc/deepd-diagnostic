@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { findPaths, isFile } from "./fs.js";
+import { loadTsProjects, projectForFile, resolveSpecifier } from "./module-resolution.js";
 import type { Pass2Finding } from "./types.js";
 
 /**
@@ -15,8 +16,6 @@ import type { Pass2Finding } from "./types.js";
 const HTML_PATTERNS = ["*.html", "*.htm"];
 const SCRIPT_PATTERNS = ["*.ts", "*.tsx", "*.js", "*.jsx", "*.mjs", "*.cjs"];
 const PYTHON_PATTERNS = ["*.py"];
-
-const MODULE_EXTENSIONS = [".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".json"];
 
 export interface ScanOptions {
   /** Substring matches (relative to the target) to leave out of the scan. */
@@ -219,44 +218,15 @@ export function parseExports(text: string): ExportInfo {
   };
 }
 
-/** NodeNext emits `./foo.js` from `foo.ts`; resolve the source, not the build output. */
-const TS_REWRITES: Record<string, string[]> = {
-  ".js": [".ts", ".tsx"],
-  ".jsx": [".tsx"],
-  ".mjs": [".mts"],
-  ".cjs": [".cts"],
-};
-
-async function resolveModule(baseDir: string, spec: string): Promise<string | null> {
-  const candidate = path.resolve(baseDir, spec);
-
-  if (await isFile(candidate)) return candidate;
-
-  const declared = path.extname(spec);
-  const rewrites = TS_REWRITES[declared];
-  if (rewrites && declared) {
-    const stem = candidate.slice(0, candidate.length - declared.length);
-    for (const rewrite of rewrites) {
-      if (await isFile(`${stem}${rewrite}`)) return `${stem}${rewrite}`;
-    }
-  }
-
-  for (const extension of MODULE_EXTENSIONS) {
-    if (await isFile(`${candidate}${extension}`)) return `${candidate}${extension}`;
-  }
-  for (const extension of MODULE_EXTENSIONS) {
-    if (await isFile(path.join(candidate, `index${extension}`))) {
-      return path.join(candidate, `index${extension}`);
-    }
-  }
-
-  return null;
-}
-
 /**
  * JS/TS → JS/TS: resolve relative specifiers and verify named imports exist in the
  * target module's exports. A function called from another file that was never
  * defined shows up here.
+ *
+ * Resolution is delegated to module-resolution.ts, the same resolver test impact
+ * uses, so NodeNext `.js` specifiers and `index` files behave identically in both.
+ * Bare specifiers (packages and tsconfig aliases) stay out of Pass 2's judgement:
+ * an alias map that is wrong would otherwise manufacture findings.
  */
 export async function scanModuleGraph(
   target: string,
@@ -264,18 +234,21 @@ export async function scanModuleGraph(
 ): Promise<Pass2Finding[]> {
   const findings: Pass2Finding[] = [];
   const exportCache = new Map<string, ExportInfo>();
+  const projects = await loadTsProjects(target);
 
   for (const file of files) {
     const text = await readText(file);
     if (!text) continue;
+
+    const project = projectForFile(projects, file);
 
     for (const importRef of extractImports(text)) {
       const spec = importRef.spec;
       if (!spec.startsWith(".") && !spec.startsWith("/")) continue; // package or alias: not ours to judge
       if (isExternalSpecifier(spec)) continue;
 
-      const baseDir = spec.startsWith("/") ? target : path.dirname(file);
-      const resolved = await resolveModule(baseDir, spec.startsWith("/") ? spec.replace(/^\//, "") : spec);
+      const resolution = await resolveSpecifier({ fromFile: file, spec, project, root: target });
+      const resolved = resolution.path;
 
       if (!resolved) {
         findings.push({

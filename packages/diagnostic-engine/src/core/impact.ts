@@ -1,6 +1,15 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { findPaths, isFile } from "./fs.js";
+import { findPaths } from "./fs.js";
+import {
+  emptyResolutionStats,
+  isAliasSpecifier,
+  loadTsProjects,
+  projectForFile,
+  resolveSpecifier,
+  type ResolutionStats,
+  type TsProject,
+} from "./module-resolution.js";
 import { extractImports } from "./pass2-analysis.js";
 import type { ImpactAdapterId, ImpactReport, RunContext } from "./types.js";
 
@@ -11,15 +20,15 @@ import type { ImpactAdapterId, ImpactReport, RunContext } from "./types.js";
  *   - `@mizchi/test-impact` (optional, installed by the project): static TS/JS
  *     resolver + per-test V8 coverage, `--format json`.
  *   - the Pass 2 import graph: invert the import edges we already parse and walk
- *     from the changed files up to the tests that import them. `tsconfig` path
- *     aliases (`@/*`) are resolved so an aliased edge is not a blind spot.
+ *     from the changed files up to the tests that import them. Resolution is
+ *     shared with Pass 2 (module-resolution.ts), so NodeNext `.js` specifiers,
+ *     tsconfig `paths` aliases and `extends` chains behave the same in both.
  *
  * Nothing here executes a test suite. Selection is a signal; running the selected
  * tests stays with the project's own runner.
  */
 
 const SCRIPT_PATTERNS = ["*.ts", "*.tsx", "*.js", "*.jsx", "*.mjs", "*.cjs"];
-const EXTENSIONS = [".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs"];
 const MAX_FILES = 2_000;
 const TEST_FILE = /\.(?:test|spec)\.[cm]?[jt]sx?$/;
 const TEST_DIR = /(?:^|\/)(?:__tests__|tests?)\//;
@@ -45,145 +54,10 @@ function isRelevant(relativePath: string): boolean {
 
 /* ------------------------------------------------------------- path aliases */
 
-export interface AliasConfig {
-  /** Absolute directory the `paths` targets resolve against. */
-  baseUrl: string;
-  paths: Array<{ pattern: string; targets: string[] }>;
-}
-
-/** tsconfig is JSONC in practice: comments and trailing commas must not break us. */
-function parseJsonc(text: string): unknown {
-  let out = "";
-  let inString = false;
-  let quote = "";
-
-  for (let index = 0; index < text.length; index += 1) {
-    const char = text[index];
-    const next = text[index + 1];
-
-    if (inString) {
-      out += char;
-      if (char === "\\") {
-        out += next ?? "";
-        index += 1;
-      } else if (char === quote) {
-        inString = false;
-      }
-      continue;
-    }
-
-    if (char === '"' || char === "'") {
-      inString = true;
-      quote = char;
-      out += char;
-      continue;
-    }
-
-    if (char === "/" && next === "/") {
-      while (index < text.length && text[index] !== "\n") index += 1;
-      out += "\n";
-      continue;
-    }
-
-    if (char === "/" && next === "*") {
-      index += 2;
-      while (index < text.length && !(text[index] === "*" && text[index + 1] === "/")) index += 1;
-      index += 1;
-      continue;
-    }
-
-    out += char;
-  }
-
-  try {
-    return JSON.parse(out.replace(/,\s*([}\]])/g, "$1"));
-  } catch {
-    return undefined;
-  }
-}
-
-/** Read `compilerOptions.paths` from tsconfig.json / jsconfig.json, if present. */
-export async function loadAliases(target: string): Promise<AliasConfig | null> {
-  for (const name of ["tsconfig.json", "jsconfig.json"]) {
-    const file = path.join(target, name);
-    let text: string;
-    try {
-      text = await readFile(file, "utf8");
-    } catch {
-      continue;
-    }
-
-    const parsed = parseJsonc(text) as
-      | { compilerOptions?: { baseUrl?: string; paths?: Record<string, string[]> } }
-      | undefined;
-    const options = parsed?.compilerOptions;
-    if (!options?.paths) continue;
-
-    const paths = Object.entries(options.paths)
-      .filter(([, targets]) => Array.isArray(targets) && targets.length > 0)
-      .map(([pattern, targets]) => ({ pattern, targets }));
-
-    return {
-      baseUrl: path.resolve(target, options.baseUrl ?? "."),
-      paths,
-    };
-  }
-
-  return null;
-}
-
-function aliasCandidates(spec: string, aliases: AliasConfig): string[] {
-  const candidates: string[] = [];
-
-  for (const entry of aliases.paths) {
-    const star = entry.pattern.indexOf("*");
-    if (star === -1) {
-      if (spec === entry.pattern) {
-        candidates.push(...entry.targets.map((target) => path.resolve(aliases.baseUrl, target)));
-      }
-      continue;
-    }
-
-    const prefix = entry.pattern.slice(0, star);
-    const suffix = entry.pattern.slice(star + 1);
-    if (!spec.startsWith(prefix) || !spec.endsWith(suffix)) continue;
-
-    const captured = spec.slice(prefix.length, spec.length - suffix.length);
-    for (const target of entry.targets) {
-      candidates.push(path.resolve(aliases.baseUrl, target.replace("*", captured)));
-    }
-  }
-
-  return candidates;
-}
-
-function withExtensions(base: string): string[] {
-  return [base, ...EXTENSIONS.map((ext) => `${base}${ext}`), ...EXTENSIONS.map((ext) => path.join(base, `index${ext}`))];
-}
-
-async function firstFile(candidates: string[]): Promise<string | null> {
-  for (const candidate of candidates) {
-    if (await isFile(candidate)) return candidate;
-  }
-  return null;
-}
-
-async function resolveSpecifier(
-  fromDir: string,
-  spec: string,
-  aliases: AliasConfig | null,
-): Promise<string | null> {
-  if (spec.startsWith(".")) {
-    return firstFile(withExtensions(path.resolve(fromDir, spec)));
-  }
-
-  if (!aliases) return null;
-  for (const base of aliasCandidates(spec, aliases)) {
-    const resolved = await firstFile(withExtensions(base));
-    if (resolved) return resolved;
-  }
-  return null;
-}
+// The resolver and its alias loader live in module-resolution.ts so Pass 2 and
+// impact cannot drift apart again. Re-exported here for existing callers/tests.
+export { loadAliases } from "./module-resolution.js";
+export type { AliasConfig } from "./module-resolution.js";
 
 /* ------------------------------------------------------------- graph adapter */
 
@@ -195,9 +69,12 @@ export async function selectFromGraph(params: {
   target: string;
   changed: string[];
   files: string[];
+  /** Optional counters so a partial selection is visible in the report. */
+  stats?: ResolutionStats;
 }): Promise<string[]> {
   const { target, changed, files } = params;
-  const aliases = await loadAliases(target);
+  const projects = await loadTsProjects(target);
+  const projectByFile = new Map<string, TsProject | undefined>();
   const importers = new Map<string, Set<string>>();
 
   for (const file of files) {
@@ -208,13 +85,32 @@ export async function selectFromGraph(params: {
       continue;
     }
 
+    const project = projectForFile(projects, file);
+    projectByFile.set(file, project);
+
     for (const ref of extractImports(text)) {
-      if (!ref.spec.startsWith(".") && !aliases) continue;
-      const resolved = await resolveSpecifier(path.dirname(file), ref.spec, aliases);
-      if (!resolved) continue;
-      const bucket = importers.get(resolved) ?? new Set<string>();
+      const resolution = await resolveSpecifier({
+        fromFile: file,
+        spec: ref.spec,
+        project,
+        root: target,
+      });
+
+      if (!resolution.path) {
+        if (params.stats) {
+          if (resolution.reason === "ambiguous") params.stats.ambiguous += 1;
+          else if (resolution.reason === "bare") {
+            // A bare package specifier is expected; one that looks like an alias is a gap.
+            if (isAliasSpecifier(ref.spec, project)) params.stats.unresolved += 1;
+            else params.stats.bare += 1;
+          } else params.stats.unresolved += 1;
+        }
+        continue;
+      }
+
+      const bucket = importers.get(resolution.path) ?? new Set<string>();
       bucket.add(file);
-      importers.set(resolved, bucket);
+      importers.set(resolution.path, bucket);
     }
   }
 
@@ -409,8 +305,14 @@ export async function analyzeImpact(options: ImpactOptions): Promise<ImpactRepor
     }
   }
 
+  const stats = emptyResolutionStats();
   if (adapter !== "mizchi-test-impact") {
-    selectedTests = await selectFromGraph({ target: ctx.target, changed: changedAbsolute, files });
+    selectedTests = await selectFromGraph({
+      target: ctx.target,
+      changed: changedAbsolute,
+      files,
+      stats,
+    });
   }
 
   const reductionPct =
@@ -427,6 +329,8 @@ export async function analyzeImpact(options: ImpactOptions): Promise<ImpactRepor
     candidates: candidates.length,
     reductionPct: Math.max(0, reductionPct),
     durationMs: Date.now() - startedAt,
+    unresolvedSpecifiers: stats.unresolved,
+    ambiguousSpecifiers: stats.ambiguous,
     ...(fallbackReason ? { fallbackReason: `fallback: ${fallbackReason}` } : {}),
   };
 }
