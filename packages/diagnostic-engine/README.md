@@ -454,3 +454,7 @@ fixture repo; the unit tests cover the parsing and classification edges.
   report notes the missing profile.
 - **`--fix`** is intentionally conservative: dependency install and formatting only.
 - DeepDiagnose does not manage toolchains, containers, or deployments.
+
+## License
+
+MIT — see [LICENSE](LICENSE).
