@@ -5,6 +5,28 @@ import path from "node:path";
 import { test } from "node:test";
 import { commandFor, exec } from "../src/core/exec.js";
 
+async function makeLocalScriptPackage(): Promise<string> {
+  const dir = await mkdtemp(path.join(tmpdir(), "dd-npm-script-"));
+  await writeFile(
+    path.join(dir, "package.json"),
+    JSON.stringify({
+      name: "dd-exec-fixture",
+      version: "1.0.0",
+      private: true,
+      scripts: {
+        "echo-args": "node echo-args.js",
+        fail: "node fail.js",
+      },
+    }),
+  );
+  await writeFile(
+    path.join(dir, "echo-args.js"),
+    "process.stdout.write(JSON.stringify(process.argv.slice(2)));",
+  );
+  await writeFile(path.join(dir, "fail.js"), "process.exit(7);");
+  return dir;
+}
+
 test("Windows npm and npx resolution derives the requested CLI from either npm_execpath", async () => {
   const dir = await mkdtemp(path.join(tmpdir(), "dd-exec-windows-"));
   const bin = path.join(dir, "node_modules", "npm", "bin");
@@ -64,20 +86,33 @@ test("integration: npm and npx execute through the production launcher", async (
   assert.equal(npx.code, 0, npx.stderr);
 });
 
-test("integration: npm preserves arguments containing spaces", async () => {
-  const result = await exec(
-    "npm",
-    ["exec", "--", "node", "-e", "process.stdout.write(process.argv[1])", "argument with spaces"],
-    process.cwd(),
-    30_000,
-  );
-  assert.equal(result.code, 0, result.stderr);
-  assert.match(result.stdout, /argument with spaces/);
+test("integration: npm preserves arguments containing spaces using a local script", async () => {
+  const dir = await makeLocalScriptPackage();
+  const expected = ["argument with spaces", 'quote"inside', "backslash\\path", "trailing "];
+
+  try {
+    const result = await exec(
+      "npm",
+      ["run", "--silent", "echo-args", "--", ...expected],
+      dir,
+      30_000,
+    );
+    assert.equal(result.code, 0, result.stderr);
+    assert.deepEqual(JSON.parse(result.stdout), expected);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
 });
 
-test("integration: npm propagates a failing child exit code", async () => {
-  const result = await exec("npm", ["exec", "--", "node", "-e", "process.exit(7)"], process.cwd(), 30_000);
-  assert.equal(result.code, 7, result.stderr);
+test("integration: npm propagates a failing local script exit code", async () => {
+  const dir = await makeLocalScriptPackage();
+
+  try {
+    const result = await exec("npm", ["run", "--silent", "fail"], dir, 30_000);
+    assert.equal(result.code, 7, result.stderr);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
 });
 
 test("integration: direct child timeout is reported", async () => {
