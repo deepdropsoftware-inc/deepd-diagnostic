@@ -32,6 +32,25 @@ export async function runStepRaw(
   const result = await ctx.exec(command, args, cwd);
   const passed = !result.timedOut && result.code === 0;
 
+  // An unavailable launcher is an environment problem, not evidence that the
+  // project's check failed. Record it as an actionable blocker instead of an
+  // "exit code unknown" failure.
+  if (result.environmentError) {
+    return {
+      stdout: result.stdout,
+      check: {
+        name,
+        status: "skipped",
+        kind: "blocker",
+        command: result.command,
+        exitCode: null,
+        durationMs: Date.now() - startedAt,
+        message: `environment unavailable: ${result.environmentError}`,
+        output: `${result.stdout}${result.stderr}`.trim().slice(-MAX_STORED_OUTPUT) || undefined,
+      },
+    };
+  }
+
   return {
     stdout: result.stdout,
     check: {

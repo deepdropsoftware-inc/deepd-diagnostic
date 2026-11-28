@@ -104,7 +104,7 @@ Component map, module table and separate implemented/planned Mermaid diagrams: [
     │   ├── commands/init.ts        config scaffolding
     │   ├── core/                   engine, passes, signals, report, ledger
     │   └── plugins/                armor + 9 ecosystem adapters
-    ├── test/                       node:test suites (26 tests)
+    ├── test/                       node:test suites (39 tests)
     └── .github/workflows/          consumer workflow template
 ```
 
@@ -117,7 +117,7 @@ Component map, module table and separate implemented/planned Mermaid diagrams: [
 | Package manager | npm with the committed `package-lock.json` | `npm ci` verified with npm 11.19.1 on Linux |
 | Ecosystem tools | Optional; supplied by the project under test | Missing tools are skipped, not failed |
 
-Runtime used for all verification recorded here: **Node 24.22.1, npm 11.19.1, Linux**. CI declares Node 20, 22 and 24. Node 18 and Windows were not tested.
+Runtime used for all verification recorded here: **Node 24.22.1, npm 11.19.1, Linux**. CI declares Node 20, 22 and 24 on Ubuntu plus a `windows-latest` job. That Windows job passed for the launcher commit `8ab3e0c` (run 46082537492); the follow-up conditions commit changes launcher-adjacent code and tests and must be rerun on Windows before claiming coverage for it. The original launcher change was tested manually by the owner on `690440e` (reported, not independently reproduced here). Node 18 and macOS were not tested.
 
 ## 7. Installation and setup
 
@@ -212,7 +212,7 @@ cd packages/diagnostic-engine
 npm test        # node --import tsx --test test/*.test.ts
 ```
 
-Expected: **26 passing tests, 0 failures** (junit parsing, Pass 2 resolution, shared resolver, aliases, impact, and triage with and without a model). Tests use only local fixtures; no network is required. The AI test never calls a provider.
+Expected: **39 passing tests, 0 failures** (junit parsing, Pass 2 resolution, shared resolver, aliases, impact, triage with and without a model, npm/npx resolution, and the production `exec()` launcher). Tests use only local fixtures; no network is required. The AI test never calls a provider. The launcher test does spawn npm/npx locally.
 
 ## 12. Type checking and builds
 

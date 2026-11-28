@@ -49,13 +49,13 @@ Without a key, triage reports `mode: rules-only`. AI mode transmits failure exce
 ```bash
 cd packages/diagnostic-engine
 npm run typecheck      # tsc --noEmit, exits 0
-npm test               # 26 tests, 0 failures
+npm test               # 39 tests, 0 failures
 npm run build          # emits dist/, exits 0
 ```
 
-**Status:** all three EXECUTED at `0313c5b` (typecheck 0, 26/26 pass, build 0). The suite uses `node:test` with local fixtures; no network is needed. The AI test stubs the provider.
+**Status:** all three EXECUTED on the PR #1 conditions branch (typecheck 0, 39/39 pass, build 0; Linux, Node 24.22.1, npm 11.19.1). The suite uses `node:test` with local fixtures; no network is needed. The AI test stubs the provider. The launcher integration test does spawn the locally installed npm/npx.
 
-What the 26 tests cover: JUnit parsing, Pass 2 resolution, the shared module resolver, tsconfig alias handling, test-impact selection, and rule/model triage. They do **not** cover the blocker lifecycle, flaky fingerprinting, process termination, AI safety, config validation, or schema versioning — those are S2–S7 and currently UNTESTED.
+What the 39 tests cover: JUnit parsing, Pass 2 resolution, the shared module resolver, tsconfig alias handling, test-impact selection, rule/model triage, Windows npm/npx path resolution, environment-error classification, and actual npm/npx spawning through the production `exec()`. Windows execution passed in CI for `8ab3e0c` (run 46082537492); this follow-up branch's amendments have not been Windows-run yet. They do **not** cover the blocker lifecycle, flaky fingerprinting, process-tree termination, AI safety, config validation, or schema versioning — those are S2–S7 and currently UNTESTED on this branch.
 
 ## 5. CLI surface
 
@@ -127,7 +127,7 @@ Only `python3` is present in the reference environment; every other probe is una
 
 | Check | Proves | Does not prove |
 |---|---|---|
-| `npm test` | The unit-level behavior covered by 26 tests | Plugin execution, CI behavior, Windows/macOS behavior |
+| `npm test` | The behavior covered by 39 tests, including npm/npx launch through `exec()` | Full plugin execution, CI behavior, and Windows/macOS behavior until those runners actually execute |
 | Self-run | The armor gate and the engine's own pipeline work on this repo | Any language plugin |
 | Scratch `init` | Config scaffolding and a clean run | Real toolchain adapters |
 | Typecheck/build | The package compiles under TypeScript 5.7 with Node 24 types | Runtime correctness on Node 18 |
